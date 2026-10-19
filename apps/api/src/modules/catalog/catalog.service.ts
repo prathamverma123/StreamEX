@@ -1,7 +1,7 @@
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { getPrisma } from '../../lib/prisma.js';
 import { Prisma } from '../../generated/prisma/index.js';
-import type { BrowseQuery, SearchQuery, SimilarQuery } from './catalog.schemas.js';
+import type { BrowseQuery, SearchQuery } from './catalog.schemas.js';
 
 /**
  * Catalog service.

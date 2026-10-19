@@ -12,7 +12,6 @@
 import { jest } from '@jest/globals';
 import type { PrismaClient } from '../generated/prisma/index.js';
 import type { Storage } from '@streamex/storage';
-import type Redis from 'ioredis';
 
 // ───────────────────────────── Prisma mock ─────────────────────────────
 
@@ -100,27 +99,36 @@ export function makePrismaMock(): PrismaMock {
 
 // ───────────────────────────── Storage mock ─────────────────────────────
 
+/**
+ * In-memory Storage double. Implements the real `Storage` interface
+ * EXACTLY (same method names + return shapes) so production code — the
+ * upload service, playback streaming, worker uploads — runs unchanged
+ * against it. Call tracking lives on a separate `calls` record instead of
+ * redeclaring the interface members as jest.Mock (which collides with the
+ * interface signatures at compile time).
+ */
 export interface StorageMock extends Storage {
+  /** The in-memory object store — assert on contents directly. */
   objects: Map<string, Buffer>;
-  puts: jest.Mock;
-  getBuffer: jest.Mock;
-  get: jest.Mock;
-  stat: jest.Mock;
-  exists: jest.Mock;
-  delete: jest.Mock;
-  deletePrefix: jest.Mock;
-  signUrl: jest.Mock;
-  putFile: jest.Mock;
-  localPath: jest.Mock;
+  /** Spies for every call, keyed by method name. */
+  calls: {
+    put: jest.Mock;
+    getBuffer: jest.Mock;
+    get: jest.Mock;
+    stat: jest.Mock;
+    exists: jest.Mock;
+    delete: jest.Mock;
+    deletePrefix: jest.Mock;
+    signUrl: jest.Mock;
+    putFile: jest.Mock;
+    localPath: jest.Mock;
+  };
 }
 
-/** In-memory Storage — enough for the upload + HLS streaming tests. */
 export function makeStorageMock(): StorageMock {
   const objects = new Map<string, Buffer>();
-  const mock: StorageMock = {
-    backend: 'local',
-    objects,
-    puts: jest.fn().mockName('storage.put'),
+  const calls = {
+    put: jest.fn().mockName('storage.put'),
     getBuffer: jest.fn().mockName('storage.getBuffer'),
     get: jest.fn().mockName('storage.get'),
     stat: jest.fn().mockName('storage.stat'),
@@ -130,39 +138,56 @@ export function makeStorageMock(): StorageMock {
     signUrl: jest.fn().mockName('storage.signUrl'),
     putFile: jest.fn().mockName('storage.putFile'),
     localPath: jest.fn().mockName('storage.localPath'),
-    async put(key, stream, _options) {
+  };
+
+  const mock: StorageMock = {
+    backend: 'local',
+    objects,
+    calls,
+    async put(key, stream, options) {
+      calls.put(key, stream, options);
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
       }
       const buf = Buffer.concat(chunks);
       objects.set(key, buf);
-      this.puts.mock.calls.push([key, stream, _options]);
       return { size: buf.length, modifiedAt: new Date() };
     },
     async getBuffer(key) {
+      calls.getBuffer(key);
       const buf = objects.get(key);
       if (!buf) throw new (await import('@streamex/storage')).StorageNotFoundError(key);
       return buf;
     },
     async get(key) {
+      calls.get(key);
       const buf = objects.get(key);
       if (!buf) throw new (await import('@streamex/storage')).StorageNotFoundError(key);
       const { Readable } = await import('node:stream');
-      return { stream: Readable.from(buf), length: buf.length };
+      return {
+        stream: Readable.from(buf),
+        length: buf.length,
+        contentType: undefined,
+        etag: undefined,
+      };
     },
     async stat(key) {
+      calls.stat(key);
       const buf = objects.get(key);
       if (!buf) throw new (await import('@streamex/storage')).StorageNotFoundError(key);
-      return { size: buf.length, modifiedAt: new Date() };
+      return { size: buf.length, modifiedAt: new Date(), etag: undefined, contentType: undefined };
     },
     async exists(key) {
+      calls.exists(key);
       return objects.has(key);
     },
     async delete(key) {
+      calls.delete(key);
       objects.delete(key);
     },
     async deletePrefix(prefix) {
+      calls.deletePrefix(prefix);
       let n = 0;
       for (const key of [...objects.keys()]) {
         if (key.startsWith(prefix)) {
@@ -173,15 +198,18 @@ export function makeStorageMock(): StorageMock {
       return n;
     },
     async signUrl(key, options) {
+      calls.signUrl(key, options);
       return `http://cdn.test/signed/${key}?exp=${options.expiresIn}`;
     },
-    async putFile(key, localPath, _options) {
+    async putFile(key, localPath, options) {
+      calls.putFile(key, localPath, options);
       const { readFile } = await import('node:fs/promises');
       const buf = await readFile(localPath);
       objects.set(key, buf);
       return { size: buf.length, modifiedAt: new Date() };
     },
     localPath(key) {
+      calls.localPath(key);
       return `/tmp/streamex-test/${key}`;
     },
   };
@@ -190,59 +218,122 @@ export function makeStorageMock(): StorageMock {
 
 // ───────────────────────────── Redis mock ─────────────────────────────
 
-export interface RedisMock extends Redis {
+/**
+ * Minimal ioredis double: working pub/sub with local channel listeners +
+ * a key store. It implements a SUBSET of Redis — call sites in production
+ * code go through it unchanged. Call tracking lives on `calls` (separate
+ * spies) so the interface members keep their real signatures.
+ */
+export interface RedisMock {
+  /** The key store — assert on values directly. */
   store: Map<string, string>;
-  publish: jest.Mock;
-  subscribe: jest.Mock;
-  quit: jest.Mock;
+  /** Spies for every call, keyed by method name. */
+  calls: {
+    publish: jest.Mock;
+    subscribe: jest.Mock;
+    psubscribe: jest.Mock;
+    quit: jest.Mock;
+    disconnect: jest.Mock;
+    on: jest.Mock;
+    get: jest.Mock;
+    set: jest.Mock;
+    incr: jest.Mock;
+    del: jest.Mock;
+  };
+  /** Registered event listeners — `emit` invokes them. */
+  _listeners: Map<string, ((...args: unknown[]) => void)[]>;
+  /** Invoke every listener registered for `event` (used by pub/sub tests). */
+  emit(event: string, ...args: unknown[]): void;
+  publish(channel: string, message: string): Promise<number>;
+  subscribe(channel: string): Promise<string>;
+  psubscribe(pattern: string): Promise<string>;
+  quit(): Promise<string>;
+  disconnect(): void;
+  on(event: string, listener: (...args: unknown[]) => void): RedisMock;
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<string>;
+  incr(key: string): Promise<number>;
+  del(...keys: string[]): Promise<number>;
 }
 
-/** Minimal ioredis mock: pub/sub with local channel listeners + key store. */
 export function makeRedisMock(): RedisMock {
   const channels = new Map<string, ((message: string) => void)[]>();
   const store = new Map<string, string>();
-  const mock = {
+  const _listeners = new Map<string, ((...args: unknown[]) => void)[]>();
+
+  const calls = {
+    publish: jest.fn().mockName('redis.publish'),
+    subscribe: jest.fn().mockName('redis.subscribe'),
+    psubscribe: jest.fn().mockName('redis.psubscribe'),
+    quit: jest.fn().mockName('redis.quit'),
+    disconnect: jest.fn().mockName('redis.disconnect'),
+    on: jest.fn().mockName('redis.on'),
+    get: jest.fn().mockName('redis.get'),
+    set: jest.fn().mockName('redis.set'),
+    incr: jest.fn().mockName('redis.incr'),
+    del: jest.fn().mockName('redis.del'),
+  };
+
+  const mock: RedisMock = {
     store,
-    publish: jest.fn().mockName('redis.publish').mockImplementation(async (channel: string, message: string) => {
+    calls,
+    _listeners,
+    emit(event: string, ...args: unknown[]) {
+      for (const listener of _listeners.get(event) ?? []) listener(...args);
+    },
+    async publish(channel: string, message: string) {
+      calls.publish(channel, message);
       const subs = channels.get(channel) ?? [];
       for (const fn of subs) fn(message);
       return subs.length;
-    }),
-    subscribe: jest.fn().mockName('redis.subscribe').mockImplementation(async (channel: string) => {
+    },
+    async subscribe(channel: string) {
+      calls.subscribe(channel);
       channels.set(channel, [...(channels.get(channel) ?? []), (message: string) => mock.emit('message', channel, message)]);
       return 'OK';
-    }),
-    psubscribe: jest.fn().mockName('redis.psubscribe').mockResolvedValue('OK'),
-    quit: jest.fn().mockName('redis.quit').mockResolvedValue('OK'),
-    disconnect: jest.fn().mockName('redis.disconnect'),
-    on: jest.fn().mockName('redis.on').mockImplementation((event: string, listener: (...args: unknown[]) => void) => {
-      if (!mock._listeners.has(event)) mock._listeners.set(event, []);
-      mock._listeners.get(event)!.push(listener);
-      return mock;
-    }),
-    _listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
-    emit(event: string, ...args: unknown[]) {
-      for (const listener of mock._listeners.get(event) ?? []) listener(...args);
     },
-    get: jest.fn().mockName('redis.get').mockImplementation(async (key: string) => store.get(key) ?? null),
-    set: jest.fn().mockName('redis.set').mockImplementation(async (key: string, value: string) => {
+    async psubscribe(pattern: string) {
+      calls.psubscribe(pattern);
+      return 'OK';
+    },
+    async quit() {
+      calls.quit();
+      return 'OK';
+    },
+    disconnect() {
+      calls.disconnect();
+    },
+    on(event: string, listener: (...args: unknown[]) => void) {
+      calls.on(event, listener);
+      if (!_listeners.has(event)) _listeners.set(event, []);
+      _listeners.get(event)!.push(listener);
+      return mock;
+    },
+    async get(key: string) {
+      calls.get(key);
+      return store.get(key) ?? null;
+    },
+    async set(key: string, value: string) {
+      calls.set(key, value);
       store.set(key, value);
       return 'OK';
-    }),
-    incr: jest.fn().mockName('redis.incr').mockImplementation(async (key: string) => {
+    },
+    async incr(key: string) {
+      calls.incr(key);
       const n = Number(store.get(key) ?? 0) + 1;
       store.set(key, String(n));
       return n;
-    }),
-    del: jest.fn().mockName('redis.del').mockImplementation(async (...keys: string[]) => {
+    },
+    async del(...keys: string[]) {
+      calls.del(...keys);
       let n = 0;
       for (const key of keys) {
         if (store.delete(key)) n += 1;
       }
       return n;
-    }),
+    },
   };
-  return mock as unknown as RedisMock;
+  return mock;
 }
 
 // ───────────────────────────── Queue producer stub ─────────────────────
@@ -258,7 +349,7 @@ export function stubQueueProducer(): {
   enqueueTranscode: jest.Mock;
   restore: () => void;
 } {
-  const spy = jest.fn().mockResolvedValue('job-1');
+  const spy = jest.fn<() => Promise<{ id: string }>>().mockName('queue.add').mockResolvedValue({ id: 'job-1' });
   const original = producer.getTranscodeQueue;
   (producer as unknown as { getTranscodeQueue: () => unknown }).getTranscodeQueue = () =>
     ({

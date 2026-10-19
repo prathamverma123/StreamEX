@@ -1,9 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate, attachProfile } from '../authenticate.js';
-import {
-  signAccessToken,
-  signRefreshToken,
-} from '../../lib/jwt.js';
+import { signAccessToken, signRefreshToken } from '../../lib/jwt.js';
 import { loadEnv } from '../../config/env.js';
 import { UnauthorizedError } from '../../lib/errors.js';
 
@@ -101,7 +98,8 @@ describe('attachProfile', () => {
   };
 
   it('attaches the profile when the header matches a user profile', async () => {
-    const token = signAccessToken({ sub: 'user-1', email: 'a@b.c', role: 'USER' });
+    // The loaded env is asserted directly — it backs the JWT TTLs used above.
+    expect(env.JWT_ACCESS_TTL).toMatch(/^\d+[smh]$/);
     const req = makeReq({ 'x-profile-id': 'profile-1' });
     req.user = { id: 'user-1', email: 'a@b.c', role: 'USER' };
     const middleware = attachProfile(async () => profileCtx);

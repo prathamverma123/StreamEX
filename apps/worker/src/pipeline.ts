@@ -4,7 +4,7 @@ import { createStorage, type Storage } from '@streamex/storage';
 import { loadWorkerEnv } from './config/env.js';
 import { getPrisma } from './prisma.js';
 import { probe, type SourceInfo } from './ffprobe.js';
-import { buildLadder, type LadderRung } from './ladder.js';
+import { buildLadder } from './ladder.js';
 import { buildMasterPlaylist } from './playlist.js';
 import {
   extractSubtitles,
@@ -134,7 +134,7 @@ export async function processAsset(input: TranscodeInput): Promise<TranscodeOutc
     await reporter.update(5, `ladder: ${rungs.map((r) => r.label).join(',')}`);
 
     // ── 4. encode ──
-    const encodeResult = await runFfmpegEncode(
+    await runFfmpegEncode(
       {
         inputPath: localSource,
         outputDir,
@@ -218,7 +218,6 @@ export async function processAsset(input: TranscodeInput): Promise<TranscodeOutc
     }
 
     // Upload the whole tree through the storage abstraction.
-    const { readdir, stat: fsStat } = await import('node:fs/promises');
     await uploadDirectory(storage, outputDir, hlsPrefix);
 
     // The reporter's complete() performs the ONE terminal write, carrying
@@ -262,8 +261,8 @@ async function uploadDirectory(
   localDir: string,
   keyPrefix: string,
 ): Promise<number> {
-  const { readdir, stat } = await import('node:fs/promises');
-  const { join, relative } = await import('node:path');
+  const { readdir } = await import('node:fs/promises');
+  const { join } = await import('node:path');
   const entries = await readdir(localDir, { withFileTypes: true });
   let count = 0;
   for (const entry of entries) {

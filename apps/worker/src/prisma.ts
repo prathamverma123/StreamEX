@@ -9,7 +9,6 @@ import { PrismaClient } from '../../api/src/generated/prisma/index.js';
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __streamexWorkerPrisma: PrismaClient | undefined;
 }
 

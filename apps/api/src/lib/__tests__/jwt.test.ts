@@ -3,7 +3,6 @@ import {
   signRefreshToken,
   verifyAccessToken,
   verifyRefreshToken,
-  verifyRefreshTokenWithEnv,
   hashToken,
   generateOpaqueToken,
   ttlSeconds,
@@ -14,7 +13,8 @@ import {
   AccessVerifyResult,
 } from '../jwt.js';
 import { UnauthorizedError } from '../errors.js';
-import { loadEnv, resetEnvCache } from '../../config/env.js';
+import { loadEnv } from '../../config/env.js';
+import jwt from 'jsonwebtoken';
 
 const env = loadEnv();
 
@@ -114,8 +114,7 @@ describe('refresh tokens', () => {
   });
 
   it('rejects a refresh token whose payload is a bare string', () => {
-    const { sign } = require('jsonwebtoken') as typeof import('jsonwebtoken');
-    const weird = sign('just-a-string', env.JWT_REFRESH_SECRET, { keyid: env.JWT_REFRESH_KID });
+    const weird = jwt.sign('just-a-string', env.JWT_REFRESH_SECRET, { keyid: env.JWT_REFRESH_KID });
     expect(() => verifyRefreshToken(weird)).toThrow(UnauthorizedError);
   });
 

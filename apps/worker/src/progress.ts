@@ -1,5 +1,4 @@
 import { getPrisma } from './prisma.js';
-import { redisConnection } from './queues.js';
 import { loadWorkerEnv } from './config/env.js';
 import type Redis from 'ioredis';
 

@@ -132,7 +132,6 @@ async function checkFfmpeg(): Promise<boolean> {
 }
 
 void main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error('fatal: worker failed to start', err);
   process.exit(1);
 });

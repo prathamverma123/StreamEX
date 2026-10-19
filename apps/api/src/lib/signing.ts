@@ -33,7 +33,7 @@ function b64urlEncode(input: Buffer | string): string {
 export function signHlsToken(
   payload: HlsTokenPayload,
   secret: string,
-  now = Date.now(),
+  _now = Date.now(),
 ): string {
   const body = b64urlEncode(JSON.stringify(payload));
   const mac = b64urlEncode(createHmac('sha256', secret).update(body).digest());

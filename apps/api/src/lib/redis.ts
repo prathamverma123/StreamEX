@@ -26,7 +26,6 @@ export function getRedis(): Redis {
   });
   cachedApp.on('error', (err) => {
     // Swallow but log — the rest of the app degrades gracefully without Redis.
-    // eslint-disable-next-line no-console
     console.error('[redis] connection error:', err.message);
   });
   return cachedApp;
@@ -39,7 +38,6 @@ export function getSubscriber(name: string): Redis {
     maxRetriesPerRequest: null,
   });
   sub.on('error', (err) => {
-    // eslint-disable-next-line no-console
     console.error(`[redis:${name}] subscriber error:`, err.message);
   });
   cachedSubscribers.set(name, sub);

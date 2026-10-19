@@ -78,7 +78,6 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error('fatal: failed to start streamex-api', err);
   process.exit(1);
 });

@@ -5,6 +5,7 @@ import {
   sha256,
 } from '../signing.js';
 import { UnauthorizedError } from '../errors.js';
+import { createHmac } from 'node:crypto';
 
 const SECRET = 'test-hls-signing-secret-0123456789abcdef';
 
@@ -61,7 +62,6 @@ describe('signHlsToken / verifyHlsToken', () => {
     const incomplete = Buffer.from(
       JSON.stringify({ aid: 'x', exp: payload.exp }),
     ).toString('base64url');
-    const { createHmac } = require('node:crypto') as typeof import('node:crypto');
     const mac = createHmac('sha256', SECRET).update(incomplete).digest('base64url');
     expect(() => verifyHlsToken(`${incomplete}.${mac}`, SECRET)).toThrow(
       'Incomplete token payload',

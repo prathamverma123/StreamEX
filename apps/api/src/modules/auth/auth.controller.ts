@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { loadEnv } from '../../config/env.js';
 import { UnauthorizedError } from '../../lib/errors.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';

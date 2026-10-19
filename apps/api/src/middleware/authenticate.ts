@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { TokenExpiredError, verify } from 'jsonwebtoken';
-import { loadEnv } from '../config/env.js';
+import { TokenExpiredError } from 'jsonwebtoken';
 import { UnauthorizedError } from '../lib/errors.js';
 import { verifyAccessToken } from '../lib/jwt.js';
 

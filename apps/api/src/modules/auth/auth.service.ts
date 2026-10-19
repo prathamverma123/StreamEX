@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import {
   ConflictError,
   ForbiddenError,
-  NotFoundError,
   UnauthorizedError,
   ValidationError,
 } from '../../lib/errors.js';
@@ -68,7 +67,6 @@ async function issueTokens(
   ctx?: { userAgent?: string; ip?: string },
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const prisma = getPrisma();
-  const env = loadEnv();
   const familyId = randomUUID();
   const session = await prisma.session.create({
     data: {

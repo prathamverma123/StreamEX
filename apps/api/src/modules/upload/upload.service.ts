@@ -78,7 +78,7 @@ export async function appendChunk(
   uploadId: string,
   offset: number,
   chunk: Buffer,
-  etag?: string,
+  _etag?: string,
 ): Promise<AppendResult> {
   const prisma = getPrisma();
   const session = await prisma.uploadSession.findUnique({ where: { id: uploadId } });

@@ -10,7 +10,14 @@ import pino from 'pino';
  *   delimited JSON ready for Loki / CloudWatch / Datadog ingestion.
  */
 
-export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+export type LogLevel =
+  | 'fatal'
+  | 'error'
+  | 'warn'
+  | 'info'
+  | 'debug'
+  | 'trace'
+  | 'silent';
 
 let rootLogger: pino.Logger | null = null;
 

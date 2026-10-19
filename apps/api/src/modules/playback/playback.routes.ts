@@ -2,7 +2,6 @@ import { Router } from 'express';
 import * as controller from './playback.controller.js';
 import { authenticate, attachProfile } from '../../middleware/authenticate.js';
 import { getProfileContext } from '../profiles/profiles.service.js';
-import { globalLimiter } from '../../middleware/rateLimit.js';
 
 const router = Router();
 

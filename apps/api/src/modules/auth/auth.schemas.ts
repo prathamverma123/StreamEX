@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-const validModerationStatus = ['PENDING', 'APPROVED', 'REJECTED'] as const;
-
 /**
  * Zod schemas for the auth module.
  * Shared between route validation and the OpenAPI annotations.

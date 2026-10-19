@@ -57,5 +57,4 @@ if (existsSync(binDir)) {
 }
 
 // 3. Hand off to the real worker main.
-// eslint-disable-next-line import/no-relative-packages
 import('./index.js');

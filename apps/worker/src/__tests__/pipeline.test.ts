@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+﻿import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -11,18 +11,18 @@ import { setPrismaForTests } from '../prisma';
 import type { Storage } from '@streamex/storage';
 
 /**
- * pipeline tests — the full orchestration against doubles for every side
+ * pipeline tests â€” the full orchestration against doubles for every side
  * effect (ffmpeg, storage, Prisma, Redis).
  *
  * What these tests lock down:
  *  - stage ordering and the percent values written to video_assets
  *  - ladder gating driven by the probed source
  *  - master playlist + rendition + subtitle row persistence
- *  - failure classification (probe failure → FAILED status + rethrow)
+ *  - failure classification (probe failure â†’ FAILED status + rethrow)
  *  - scratch-dir cleanup on success AND failure
  */
 
-// ── doubles ──
+// â”€â”€ doubles â”€â”€
 
 const ffmpegCommands: string[][] = [];
 
@@ -70,7 +70,7 @@ jest.mock('node:child_process', () => {
   };
 });
 
-// Storage double — records puts, streams the recorded source back.
+// Storage double â€” records puts, streams the recorded source back.
 const putCalls: Array<{ key: string; body: string }> = [];
 const fakeStorage: Storage = {
   async put(key, body, _meta) {
@@ -82,7 +82,7 @@ const fakeStorage: Storage = {
     const body = await readFile(filePath, 'utf8').catch(() => '(unreadable)');
     putCalls.push({ key, body });
   },
-  async get(key) {
+  async get(_key: string) {
     return {
       stream: (async function* () { yield Buffer.from('src'); })(),
       contentType: 'video/mp4',
@@ -91,7 +91,7 @@ const fakeStorage: Storage = {
       metadata: {},
     };
   },
-  async getStream(key) {
+  async getStream(_key: string) {
     return {
       stream: (async function* () { yield Buffer.from('src'); })(),
       contentType: 'video/mp4',
@@ -156,7 +156,7 @@ jest.mock('ioredis', () => {
   };
 });
 
-// The runner's encode step spawns ffmpeg — stub it to emit the artifacts the
+// The runner's encode step spawns ffmpeg â€” stub it to emit the artifacts the
 // pipeline expects, so the orchestration can be tested end-to-end.
 jest.mock('../ffmpegRunner', () => {
   const actual = jest.requireActual('../ffmpegRunner') as Record<string, unknown>;
@@ -188,7 +188,6 @@ process.env.TRANSCODE_TMP_DIR = tmpdir();
 process.env.TRANSCODE_ENABLE_4K = 'false';
 
 describe('pipeline.processAsset', () => {
-  let uploadRoot: string;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -198,7 +197,7 @@ describe('pipeline.processAsset', () => {
     subtitleCreates.length = 0;
     published.length = 0;
     ffmpegCommands.length = 0;
-    uploadRoot = tmpdir();
+    process.env.STORAGE_LOCAL_ROOT = tmpdir();
     setStorageForTests(fakeStorage);
     setPrismaForTests(prismaDouble as never);
   });
@@ -210,7 +209,7 @@ describe('pipeline.processAsset', () => {
   it('runs the full happy path and persists every artifact', async () => {
     const outcome = await processAsset({ assetId: 'asset-1', sourceKey: 'uploads/src.mp4' });
 
-    // Rung gating: 1080p source, 4K disabled → 240..1080.
+    // Rung gating: 1080p source, 4K disabled â†’ 240..1080.
     expect(outcome.rungs).toEqual(['240p', '480p', '720p', '1080p']);
     expect(outcome.durationSeconds).toBe(120);
     expect(outcome.subtitles).toEqual([{ language: 'eng' }]);

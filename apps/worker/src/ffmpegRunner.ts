@@ -4,7 +4,6 @@ import { loadWorkerEnv } from './config/env.js';
 import { buildFfmpegPlan, buildSpriteArgs, buildSubtitleArgs, type BuildPlanInput } from './ffmpeg.js';
 import { buildSpriteEntries, buildThumbnailVtt, formatTimestamp } from './playlist.js';
 import { parseFfmpegProgress, percentFromSeconds } from './transcode/progress.js';
-import type { LadderRung } from './ladder.js';
 import type { SourceInfo } from './ffprobe.js';
 
 const execFileAsync = promisify(execFile);

@@ -7,10 +7,6 @@ import path from 'node:path';
  * required on the CI host.
  */
 
-const FIXTURES: Record<string, string> = {
-  '1080p-with-subs.json': 'ffprobe-1080p-subs.json',
-};
-
 const fixtureDir = path.join(__dirname, 'fixtures');
 
 function loadFixture(name: string): string {

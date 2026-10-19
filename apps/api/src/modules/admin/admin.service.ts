@@ -2,7 +2,6 @@ import { ConflictError, NotFoundError } from '../../lib/errors.js';
 import { getPrisma } from '../../lib/prisma.js';
 import { enqueueTranscode } from '../../queues/producer.js';
 import type {
-  BulkTitleRow,
   BulkUploadInput,
   CreateAssetInput,
   ModerationPatchInput,
