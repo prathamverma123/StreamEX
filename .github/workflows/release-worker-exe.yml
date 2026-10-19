@@ -1,0 +1,115 @@
+name: Release worker exe
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build + package + release (windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      - name: Run worker tests
+        working-directory: apps/worker
+        run: npm test
+
+      - name: Build the worker executable
+        working-directory: apps/worker
+        run: bun build --compile --target=bun-windows-x64 --outfile dist-exe/streamex-worker.exe src/exe-main.ts
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:TEMP 'innosetup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $dst -UseBasicParsing
+          Start-Process -FilePath $dst -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' -Wait
+          Test-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+
+      - name: Package the release zip + installer
+        working-directory: apps/worker
+        run: node scripts/package.mjs
+
+      - name: Smoke-test the installed exe
+        working-directory: dist-exe
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem . -Filter 'StreamEXWorker-Setup-*.exe' | Select-Object -First 1
+          if (-not $setup) { "setup exe missing"; exit 1 }
+          $dir = Join-Path $env:TEMP 'streamex-install-test'
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { "install failed: $($p.ExitCode)"; exit 1 }
+          $env:DATABASE_URL = 'postgresql://streamex:streamex@localhost:5432/none'
+          $env:REDIS_URL    = 'redis://localhost:6379'
+          $env:LOG_LEVEL    = 'info'
+          $env:PRISMA_QUERY_ENGINE_LIBRARY = ''
+          $w = Start-Process -FilePath (Join-Path $dir 'streamex-worker.exe') -PassThru -NoNewWindow -RedirectStandardOutput out.log -RedirectStandardError err.log
+          Start-Sleep -Seconds 8
+          if (-not $w.HasExited) { Stop-Process -Id $w.Id -Force }
+          $log = Get-Content out.log -Raw -ErrorAction SilentlyContinue
+          if ($log -notmatch 'worker starting') { "worker did not start:`n$log`n$(Get-Content err.log -Raw)"; exit 1 }
+          "installed exe booted OK"
+          & (Join-Path $dir 'unins000.exe') /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
+          if (Test-Path $dir) { "uninstall left files behind"; exit 1 }
+          "uninstall clean"
+
+      - name: Smoke-test the packaged exe
+        working-directory: apps/worker/release/streamex-worker-win-x64
+        shell: pwsh
+        run: |
+          $env:DATABASE_URL = 'postgresql://streamex:streamex@localhost:5432/none'
+          $env:REDIS_URL    = 'redis://localhost:6379'
+          $env:LOG_LEVEL    = 'info'
+          $p = Start-Process -FilePath ".\streamex-worker.exe" -PassThru -NoNewWindow `
+               -RedirectStandardOutput out.log -RedirectStandardError err.log
+          Start-Sleep -Seconds 8
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; "RUNNING (ok)" | Out-File verdict.txt }
+          else {
+            $log = Get-Content out.log -Raw -ErrorAction SilentlyContinue
+            if ($log -match 'worker starting') { "EXITED-AFTER-START (ok)" | Out-File verdict.txt }
+            else { "NO-START-LOG (fail)" | Out-File verdict.txt }
+          }
+          Get-Content verdict.txt
+          $ok = (Get-Content verdict.txt) -match 'ok'
+          if (-not $ok) { Get-Content err.log -ErrorAction SilentlyContinue; exit 1 }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamex-worker-win-x64
+          path: |
+            apps/worker/release/streamex-worker-win-x64.zip
+            dist-exe/StreamEXWorker-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/worker/release/streamex-worker-win-x64.zip
+            dist-exe/StreamEXWorker-Setup-*.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,52 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "h264",
+      "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+      "codec_type": "video",
+      "width": 1920,
+      "height": 1080,
+      "r_frame_rate": "24000/1001",
+      "avg_frame_rate": "24000/1001",
+      "duration": "5420.500000",
+      "bit_rate": "8600000",
+      "nb_frames": "129924",
+      "disposition": { "default": 1, "forced": 0 }
+    },
+    {
+      "index": 1,
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 6,
+      "duration": "5420.533333",
+      "bit_rate": "384000",
+      "disposition": { "default": 1, "forced": 0 }
+    },
+    {
+      "index": 3,
+      "codec_name": "subrip",
+      "codec_type": "subtitle",
+      "duration": "5410.000000",
+      "disposition": { "default": 1, "forced": 0 },
+      "tags": { "language": "eng", "title": "English" }
+    },
+    {
+      "index": 4,
+      "codec_name": "subrip",
+      "codec_type": "subtitle",
+      "duration": "5405.000000",
+      "disposition": { "default": 0, "forced": 0 },
+      "tags": { "language": "deu", "title": "Deutsch" }
+    }
+  ],
+  "format": {
+    "filename": "source.mkv",
+    "nb_streams": 4,
+    "format_name": "matroska,webm",
+    "duration": "5420.500000",
+    "size": "5889998800",
+    "bit_rate": "8697000"
+  }
+}

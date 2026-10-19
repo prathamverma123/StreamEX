@@ -1,0 +1,118 @@
+# StreamEX — full local stack: Postgres, Redis, API, worker, nginx.
+#
+#   docker compose up -d --build
+#
+# First boot: apply migrations + seed data:
+#   docker compose run --rm api npm run db:migrate:deploy
+#   docker compose run --rm api npm run db:seed
+#
+# The API is exposed through nginx on http://localhost:8080.
+
+name: streamex
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: streamex
+      POSTGRES_PASSWORD: streamex
+      POSTGRES_DB: streamex
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U streamex -d streamex']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # AOF on so transcode jobs survive a restart.
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://streamex:streamex@postgres:5432/streamex
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      JWT_REFRESH_KID: ${JWT_REFRESH_KID:-refresh-1}
+      HLS_SIGNING_SECRET: ${HLS_SIGNING_SECRET:?set HLS_SIGNING_SECRET in .env}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_ROOT: /data/storage
+      CDN_BASE_URL: ${CDN_BASE_URL:-http://localhost:8080}
+      MAIL_TRANSPORT: console
+      LOG_LEVEL: info
+      LOG_PRETTY: 'false'
+    ports:
+      - '4000:4000'
+    volumes:
+      - mediadata:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://streamex:streamex@postgres:5432/streamex
+      REDIS_URL: redis://redis:6379
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_ROOT: /data/storage
+      CDN_BASE_URL: ${CDN_BASE_URL:-http://localhost:8080}
+      TRANSCODE_TMP_DIR: /data/work
+      TRANSCODE_CONCURRENCY: '2'
+      LOG_LEVEL: info
+      LOG_PRETTY: 'false'
+    volumes:
+      - mediadata:/data/storage
+      - workdata:/data/work
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - '8080:80'
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - mediadata:/data/storage:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  mediadata:
+  workdata:

@@ -1,0 +1,397 @@
+// StreamEX — Prisma schema
+// Mirrors the production Postgres schema 1:1 (snake_case tables/columns).
+// The tsvector column + GIN index are added by prisma/enhance.ts because
+// Prisma cannot express them natively (see docs/ARCHITECTURE.md).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── enums ───────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+
+  @@map("user_role")
+}
+
+enum TitleType {
+  MOVIE
+  SERIES
+
+  @@map("title_type")
+}
+
+enum ContentStatus {
+  PENDING
+  PUBLISHED
+  ARCHIVED
+
+  @@map("content_status")
+}
+
+enum AssetStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+
+  @@map("asset_status")
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("moderation_status")
+}
+
+// ─────────────────────────────── users ───────────────────────────────
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         UserRole  @default(USER)
+  emailVerified DateTime? @map("email_verified")
+  isSuspended  Boolean   @default(false) @map("is_suspended")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  profiles         Profile[]
+  sessions         Session[]
+  passwordResets   PasswordResetToken[]
+  watchlistEntries WatchlistEntry[]
+  bulkIngestions   BulkIngestion[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Profile {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  isKids       Boolean  @default(false) @map("is_kids")
+  language     String   @default("en")
+  maturity     Int      @default(100)
+  autoplayNext Boolean  @default(true) @map("autoplay_next")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchProgress WatchProgress[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([isKids])
+  @@map("profiles")
+}
+
+// Refresh-token sessions. One row per refresh token family.
+// token_hash stores SHA-256(refreshToken) — raw tokens never touch the DB.
+model Session {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String     @map("user_id") @db.Uuid
+  tokenHash     String     @unique @map("token_hash")
+  familyId      String     @map("family_id") @db.Uuid
+  userAgent     String?    @map("user_agent")
+  ip            String?    @map("ip")
+  expiresAt     DateTime   @map("expires_at")
+  revokedAt     DateTime?  @map("revoked_at")
+  revokedReason String?    @map("revoked_reason")
+  lastUsedAt    DateTime?  @map("last_used_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ─────────────────────────────── catalog ───────────────────────────────
+
+model Title {
+  id              String          @id @default(uuid()) @db.Uuid
+  slug            String          @unique
+  type            TitleType       @default(MOVIE)
+  name            String
+  synopsis        String          @default("")
+  releaseYear     Int             @map("release_year")
+  rating          String          @default("PG-13")
+  runtimeMinutes  Int?            @map("runtime_minutes")
+  posterUrl       String?         @map("poster_url")
+  backdropUrl     String?         @map("backdrop_url")
+  trailerUrl      String?         @map("trailer_url")
+  heroLandscapeUrl String?        @map("hero_landscape_url")
+  maturityRating  String          @default("PG-13") @map("maturity_rating")
+  isFeatured      Boolean         @default(false) @map("is_featured")
+  isOriginal      Boolean         @default(false) @map("is_original")
+  originalLanguage String         @default("en") @map("original_language")
+  genres          String[]        @default([])
+  tags            String[]        @default([])
+  cast            String[]        @default([])
+  directors       String[]        @default([])
+  status          ContentStatus   @default(PENDING)
+  viewCount       BigInt          @default(0) @map("view_count")
+  likeCount       BigInt          @default(0) @map("like_count")
+  moderationStatus ModerationStatus @default(PENDING) @map("moderation_status")
+  publishedAt     DateTime?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  seasons          Season[]
+  videoAssets      VideoAsset[]
+  watchlistEntries WatchlistEntry[]
+  watchProgress    WatchProgress[]
+  moderationItems  ModerationItem[]
+
+  @@index([type])
+  @@index([releaseYear])
+  @@index([rating])
+  @@index([isFeatured])
+  @@index([viewCount])
+  @@index([moderationStatus])
+  @@map("titles")
+}
+
+model Season {
+  id        String    @id @default(uuid()) @db.Uuid
+  titleId   String    @map("title_id") @db.Uuid
+  number    Int
+  name      String?
+  overview  String    @default("")
+  airedFrom DateTime? @map("aired_from")
+  airedTo   DateTime? @map("aired_to")
+  posterUrl String?   @map("poster_url")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  title    Title     @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([titleId, number])
+  @@index([titleId])
+  @@map("seasons")
+}
+
+model Episode {
+  id             String    @id @default(uuid()) @db.Uuid
+  seasonId       String    @map("season_id") @db.Uuid
+  number         Int
+  name           String
+  overview       String    @default("")
+  runtimeMinutes Int?      @map("runtime_minutes")
+  stillUrl       String?   @map("still_url")
+  airDate        DateTime? @map("air_date")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  season        Season         @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  videoAssets  VideoAsset[]
+  watchProgress WatchProgress[]
+
+  @@unique([seasonId, number])
+  @@index([seasonId])
+  @@map("episodes")
+}
+
+// ─────────────────────────────── video pipeline ───────────────────────────────
+
+model VideoAsset {
+  id               String      @id @default(uuid()) @db.Uuid
+  episodeId        String?     @map("episode_id") @db.Uuid
+  titleId          String?     @map("title_id") @db.Uuid
+  status           AssetStatus @default(UPLOADING)
+  sourceKey        String      @map("source_key")
+  sourceEtag       String?     @map("source_etag")
+  sourceSizeBytes  BigInt      @map("source_size_bytes")
+  sourceMime       String?     @map("source_mime")
+  container        String?     @map("container")
+  durationSeconds  Float?      @map("duration_seconds")
+  sourceWidth      Int?        @map("source_width")
+  sourceHeight     Int?        @map("source_height")
+  thumbnailSpriteKey String?  @map("thumbnail_sprite_key")
+  thumbnailVttKey   String?    @map("thumbnail_vtt_key")
+  masterPlaylistKey String?    @map("master_playlist_key")
+  processingPercent Float      @default(0) @map("processing_percent")
+  errorMessage     String?     @map("error_message")
+  attempts         Int         @default(0) @map("attempts")
+  lastErrorCode    String?     @map("last_error_code")
+  uploadedById     String?     @map("uploaded_by_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  readyAt          DateTime?   @map("ready_at")
+
+  episode      Episode?        @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  title        Title?          @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  renditions   VideoRendition[]
+  subtitles    SubtitleTrack[]
+  uploadSession UploadSession?
+
+  @@index([titleId])
+  @@index([episodeId])
+  @@index([status])
+  @@index([uploadedById])
+  @@map("video_assets")
+}
+
+model VideoRendition {
+  id             String  @id @default(uuid()) @db.Uuid
+  assetId        String  @map("asset_id") @db.Uuid
+  label          String
+  width          Int
+  height         Int
+  videoBitrateKbps Int   @map("video_bitrate_kbps")
+  audioBitrateKbps Int  @map("audio_bitrate_kbps")
+  codec          String  @default("h264")
+  playlistKey    String  @map("playlist_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  asset VideoAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, label])
+  @@index([assetId])
+  @@map("video_renditions")
+}
+
+model SubtitleTrack {
+  id        String   @id @default(uuid()) @db.Uuid
+  assetId   String   @map("asset_id") @db.Uuid
+  language  String
+  label     String
+  isDefault Boolean  @default(false) @map("is_default")
+  vttKey    String   @map("vtt_key")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  asset VideoAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, language])
+  @@index([assetId])
+  @@map("subtitle_tracks")
+}
+
+// Chunked / resumable upload bookkeeping.
+model UploadSession {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  assetId       String   @unique @map("asset_id") @db.Uuid
+  filename      String
+  totalBytes    BigInt   @map("total_bytes")
+  chunkSize     Int      @map("chunk_size")
+  receivedBytes BigInt   @default(0) @map("received_bytes")
+  nextOffset    BigInt   @default(0) @map("next_offset")
+  status        UploadSessionStatus @default(ACTIVE)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  asset VideoAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@map("upload_sessions")
+}
+
+enum UploadSessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+
+  @@map("upload_session_status")
+}
+
+// ─────────────────────────────── user activity ───────────────────────────────
+
+model WatchProgress {
+  id            String   @id @default(uuid()) @db.Uuid
+  profileId     String   @map("profile_id") @db.Uuid
+  titleId       String   @map("title_id") @db.Uuid
+  episodeId     String?  @map("episode_id") @db.Uuid
+  positionSeconds Int    @default(0) @map("position_seconds")
+  durationSeconds Float  @default(0) @map("duration_seconds")
+  percentWatched Float   @default(0) @map("percent_watched")
+  completed     Boolean  @default(false)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title   Title   @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, titleId, episodeId])
+  @@index([profileId, updatedAt])
+  @@index([titleId])
+  @@map("watch_progress")
+}
+
+model WatchlistEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  titleId   String   @map("title_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title Title @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, titleId])
+  @@index([userId])
+  @@index([titleId])
+  @@map("watchlist")
+}
+
+// ─────────────────────────────── admin ───────────────────────────────
+
+model BulkIngestion {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  filename     String
+  totalRows    Int      @map("total_rows")
+  successRows  Int      @default(0) @map("success_rows")
+  failedRows   Int      @default(0) @map("failed_rows")
+  errorsJson   Json     @map("errors_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("bulk_ingestion")
+}
+
+model ModerationItem {
+  id          String          @id @default(uuid()) @db.Uuid
+  titleId     String          @unique @map("title_id")
+  status      ModerationStatus @default(PENDING)
+  notes       String?
+  reviewedById String?         @map("reviewed_by_id") @db.Uuid
+  reviewedAt  DateTime?        @map("reviewed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  title Title @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("moderation_items")
+}

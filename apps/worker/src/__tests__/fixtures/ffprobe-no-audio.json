@@ -1,0 +1,24 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 1280,
+      "height": 720,
+      "r_frame_rate": "25/1",
+      "avg_frame_rate": "25/1",
+      "duration": "600.000000",
+      "bit_rate": "2500000",
+      "disposition": { "default": 1 }
+    }
+  ],
+  "format": {
+    "filename": "silent.mp4",
+    "nb_streams": 1,
+    "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+    "duration": "600.000000",
+    "size": "187500000",
+    "bit_rate": "2500000"
+  }
+}
