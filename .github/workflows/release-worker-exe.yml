@@ -72,6 +72,13 @@ jobs:
           if ($log -notmatch 'worker starting') { "worker did not start:`n$log`n$(Get-Content err.log -Raw)"; exit 1 }
           "installed exe booted OK"
           & (Join-Path $dir 'unins000.exe') /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
+          # Inno's uninstaller spawns a detached copy of itself and returns
+          # immediately — poll for the install dir to actually disappear,
+          # with a hard deadline so CI can never hang on it.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $dir) -and ((Get-Date) -lt $deadline)) {
+            Start-Sleep -Milliseconds 500
+          }
           if (Test-Path $dir) { "uninstall left files behind"; exit 1 }
           "uninstall clean"
 
