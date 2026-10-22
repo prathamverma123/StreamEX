@@ -1,5 +1,9 @@
 # StreamEX
 
+A Netflix-style streaming platform: React frontend, Express/Prisma API, ffmpeg transcode worker, realtime layer, and full deployment tooling.
+
+**Docs:** [API reference](docs/api-reference.md) · [Architecture](docs/architecture.md) · [Operations runbook](docs/operations-runbook.md)
+
 Production-grade streaming platform backend: Express + Prisma API, BullMQ
 transcoding worker, Socket.io realtime layer, and the full deployment stack.
 
