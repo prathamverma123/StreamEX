@@ -15,11 +15,10 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/storage/package.json packages/storage/package.json
-# The root postinstall runs `prisma generate --schema=apps/api/prisma/schema.prisma`
-# during npm ci — the schema must be on disk for it to succeed.
-COPY apps/api/prisma apps/api/prisma
 
-RUN --mount=type=cache,target=/root/.npm npm ci --workspace @streamex/worker --include-workspace-root
+# --ignore-scripts: the root prepare/postinstall build the storage package
+# and run prisma generate — impossible before the sources are COPYed.
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --workspace @streamex/worker --include-workspace-root
 
 # ── build ─────────────────────────────────────────────────────────────────────
 FROM deps AS build
@@ -30,12 +29,17 @@ COPY packages/storage packages/storage
 COPY apps/api apps/api
 COPY apps/worker apps/worker
 
-# The worker imports the API's generated Prisma client.
+# The worker imports the API's generated Prisma client. Generate into
+# src/generated (TS imports) AND dist/generated (the compiled API's runtime
+# require path) — see apps/api/Dockerfile for the full rationale.
 RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma --output=apps/api/dist/generated/prisma
 
 RUN npm run build --workspace @streamex/storage
 RUN npm run build --workspace @streamex/api
 RUN npm run build --workspace @streamex/worker
+# Non-TS assets the compiler doesn't emit — copy the runtime bits into dist.
+RUN cp -r apps/api/src/generated/prisma/* apps/api/dist/generated/prisma/ 2>/dev/null || true
 
 # ── runner ────────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runner
@@ -53,14 +57,16 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/storage/package.json packages/storage/package.json
-# Same as the deps stage: npm ci triggers the root postinstall (prisma
-# generate), which needs the schema BEFORE it runs.
-COPY apps/api/prisma apps/api/prisma
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace @streamex/worker --include-workspace-root
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --omit=dev --workspace @streamex/worker --include-workspace-root
 
 COPY --from=build /app/packages/storage/dist packages/storage/dist
 COPY --from=build /app/packages/storage/package.json packages/storage/package.json
+# The compiled worker requires ../../api/src/generated/... at runtime
+# (rootDir-relative path baked in by tsc), so the generated client must
+# exist under src/generated too — not just the API's dist/generated.
 COPY --from=build /app/apps/api/src/generated apps/api/src/generated
+# Runtime bits the engine needs.
+COPY --from=build /app/apps/api/dist/generated apps/api/dist/generated
 COPY --from=build /app/apps/api/prisma apps/api/prisma
 COPY --from=build /app/apps/worker/dist apps/worker/dist
 
