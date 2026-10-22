@@ -18,7 +18,9 @@ COPY packages/storage/package.json packages/storage/package.json
 
 # --ignore-scripts: the root prepare/postinstall build the storage package
 # and run prisma generate — impossible before the sources are COPYed.
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --workspace @streamex/worker --include-workspace-root
+# All THREE workspaces' deps are needed: the build stage compiles the API
+# too (the worker imports its generated Prisma client).
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --workspaces --include-workspace-root
 
 # ── build ─────────────────────────────────────────────────────────────────────
 FROM deps AS build
