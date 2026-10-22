@@ -29,17 +29,15 @@ COPY packages/storage packages/storage
 COPY apps/api apps/api
 COPY apps/worker apps/worker
 
-# The worker imports the API's generated Prisma client. Generate into
-# src/generated (TS imports) AND dist/generated (the compiled API's runtime
-# require path) — see apps/api/Dockerfile for the full rationale.
+# The worker imports the API's generated Prisma client (src/generated for
+# TS; the compiled requires resolve via dist/generated — mirrored by
+# scripts/copy-prisma-assets.mjs, same as local `npm run build`).
 RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
-RUN npx prisma generate --schema=apps/api/prisma/schema.prisma --output=apps/api/dist/generated/prisma
 
 RUN npm run build --workspace @streamex/storage
 RUN npm run build --workspace @streamex/api
 RUN npm run build --workspace @streamex/worker
-# Non-TS assets the compiler doesn't emit — copy the runtime bits into dist.
-RUN cp -r apps/api/src/generated/prisma/* apps/api/dist/generated/prisma/ 2>/dev/null || true
+RUN node scripts/copy-prisma-assets.mjs
 
 # ── runner ────────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runner

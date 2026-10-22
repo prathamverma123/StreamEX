@@ -31,20 +31,16 @@ COPY tsconfig.base.json ./
 COPY packages/storage packages/storage
 COPY apps/api apps/api
 
-# Generate the Prisma client TWICE, into both locations the code needs:
-#   1. src/generated — so the TypeScript imports typecheck + compile
-#   2. dist/generated — the emitted JS requires ../generated at runtime
-# A single generate with output=dist would leave src imports unresolved.
-# The second uses a temp schema with the output overridden.
+# Generate the Prisma client into src/generated — the TS imports and the
+# compiled requires under dist/ both resolve against the generated output
+# (tsc does not copy non-TS assets, so scripts/copy-prisma-assets.mjs mirrors
+# it into dist/generated after the build — same as the local `npm run build`).
 RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
-RUN npx prisma generate --schema=apps/api/prisma/schema.prisma --output=apps/api/dist/generated/prisma
 
 # Build the shared storage package first (the API imports @streamex/storage).
 RUN npm run build --workspace @streamex/storage
 RUN npm run build --workspace @streamex/api
-# tsc does not copy non-TS assets (the query engine binary is excluded from
-# npm's package anyway) — copy the runtime bits into dist explicitly.
-RUN cp -r apps/api/src/generated/prisma/* apps/api/dist/generated/prisma/ 2>/dev/null || true
+RUN node scripts/copy-prisma-assets.mjs
 
 # ── runner ────────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runner
