@@ -25,6 +25,7 @@ FROM deps AS build
 WORKDIR /app
 
 COPY tsconfig.base.json ./
+COPY scripts/copy-prisma-assets.mjs scripts/copy-prisma-assets.mjs
 COPY packages/storage packages/storage
 COPY apps/api apps/api
 COPY apps/worker apps/worker
